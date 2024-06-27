@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>广东省地图</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+    <style>
+        #main {
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <div id="main"></div>
+    <script>
+        // BD-09坐标转换为GCJ-02坐标
+        function bd09ToGcj02(bd_lng, bd_lat) {
+            var x = bd_lng - 0.0065;
+            var y = bd_lat - 0.006;
+            var z = Math.sqrt(x * x + y * y) - 0.00002 * Math.sin(y * Math.PI);
+            var theta = Math.atan2(y, x) - 0.000003 * Math.cos(x * Math.PI);
+            var gg_lng = z * Math.cos(theta);
+            var gg_lat = z * Math.sin(theta);
+            return [gg_lng, gg_lat];
+        }
+
+        // 初始化 ECharts 实例
+        var chart = echarts.init(document.getElementById('main'));
+
+        // 加载多个 GeoJSON 数据
+        Promise.all([
+            fetch('./data/广东省.json').then(response => response.json()),
+            fetch('./data/湖南省.json').then(response => response.json()),
+            fetch('./data/海南省.json').then(response => response.json()),
+        ]).then(geoJsons => {
+            console.log("GeoJSONs Loaded: ", geoJsons);
+
+            // 合并 GeoJSON 数据
+            let mergedGeoJson = {
+                type: "FeatureCollection",
+                features: []
+            };
+
+            geoJsons.forEach(geoJson => {
+                if (geoJson && geoJson.features) {
+                    mergedGeoJson.features = mergedGeoJson.features.concat(geoJson.features);
+                } else {
+                    console.error('Invalid GeoJSON:', geoJson);
+                }
+            });
+
+            console.log("Merged GeoJSON: ", mergedGeoJson);
+
+            echarts.registerMap('mergedMap', mergedGeoJson);
+
+            var option = { 
+                tooltip: {
+                    trigger: 'item',
+                    formatter: function(params) {
+                        if (params.componentType === 'series' && params.seriesType === 'scatter') {
+                            return `
+                                <div style="color: red;">
+                                    <strong>${params.name}</strong><br/>
+                                    坐标: ${params.value[0]}, ${params.value[1]}
+                                </div>
+                            `;
+                        }
+                        return params.name;
+                    }
+                },
+                geo: {
+                    map: 'mergedMap',
+                    roam: true,  // 开启缩放和平移
+                    zoom: 5,  // 设置默认放大倍数
+                    center: bd09ToGcj02(113.308255, 23.13017),  // 设置默认中心点，广州坐标
+                    label: {
+                        show: true,
+                        fontSize: 10,  // 调整字体大小以便更清晰
+                        formatter: function(params) {
+                            // 仅在特定缩放级别显示标签
+                            if (chart.getOption().geo[0].zoom > 2) {
+                                return params.name;
+                            } else {
+                                return '';
+                            }
+                        }
+                    },
+                    itemStyle: {
+                        normal: {
+                            areaColor: '#cccccc',
+                            borderColor: '#333333'
+                        },
+                        emphasis: {
+                            areaColor: '#ffcc00'
+                        }
+                    }
+                },
+                series: [
+                    {
+                        name: '点',
+                        type: 'scatter',
+                        coordinateSystem: 'geo',
+                        data: [],
+                        symbolSize: 10,
+                        itemStyle: {
+                            color: 'red'
+                        }
+                    },
+                    {
+                        name: '火车轨道',
+                        type: 'lines',
+                        coordinateSystem: 'geo',
+                        zlevel: 1,
+                        lineStyle: {
+                            color: 'black',
+                            width: 2,
+                            type: 'dashed',
+                            dashOffset: 2,
+                        },
+                        data: [
+                            {
+                                coords: [
+                                    bd09ToGcj02(113.264385, 23.129112), // 广州
+                                    bd09ToGcj02(113.551513, 22.27604),  // 珠海
+                                    bd09ToGcj02(114.057868, 22.543099), // 深圳
+                                    bd09ToGcj02(113.763433, 23.043024)  // 东莞
+                                ]
+                            },
+                            {
+                                coords: [
+                                    bd09ToGcj02(113.264385, 23.129112), // 广州
+                                    bd09ToGcj02(113.552837, 22.999727), // 佛山
+                                    bd09ToGcj02(113.763433, 23.043024)  // 东莞
+                                ]
+                            },
+                            {
+                                coords: [
+                                    bd09ToGcj02(113.763433, 23.043024), // 东莞
+                                    bd09ToGcj02(114.057868, 22.543099), // 深圳
+                                    bd09ToGcj02(113.829579, 23.148408)  // 惠州
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            };
+
+            chart.setOption(option);
+
+            // 添加点的函数
+            function addPoint(longitude, latitude, name) {
+                var point = {
+                    name: name,
+                    value: bd09ToGcj02(longitude, latitude)
+                };
+
+                var series = chart.getOption().series;
+                series[0].data.push(point);
+
+                chart.setOption({
+                    series: series
+                });
+
+            }
+
+            // 示例：在故障位置添加点
+            addPoint(113.898302, 22.449655, '故障位置1');
+            addPoint(113.706947, 22.5762, '故障位置2');
+            addPoint(113.308255, 23.13017, '中心');
+            addPoint(113.31481,23.410254, '机场');
+
+            // 监听点击事件
+            chart.on('click', function(params) {
+                if (params.componentType === 'geo') {
+                    var regionName = params.name;
+                    // 在这里根据区域名称执行相关操作或跳转
+                    alert('点击了区域: ' + regionName);
+                } else if (params.componentType === 'series' && params.seriesType === 'scatter') {
+                    var pointName = params.name;
+                    var pointValue = params.value;
+                    // 在这里根据点名称或值执行相关操作
+                    alert('点击了点: ' + pointName + ', 坐标: ' + pointValue);
+                }
+            });
+        }).catch(error => {
+            console.error('Error loading the GeoJSON files:', error);
+        });
+
+        // 监听缩放事件
+        chart.on('geoRoam', function(params) {
+            var option = chart.getOption();
+            // 获取当前缩放级别
+            var zoom = option.geo[0].zoom;
+            // 根据缩放级别更新标签显示
+            option.geo[0].label.formatter = function(params) {
+                if (zoom > 2) {
+                    return params.name;
+                } else {
+                    return '';
+                }
+            };
+            chart.setOption(option);
+        });
+    </script>
+</body>
+</html>

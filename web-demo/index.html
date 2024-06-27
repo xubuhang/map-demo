@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>台州市地铁线路图</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .station {
+            fill: white;
+            stroke: black;
+            stroke-width: 0.5;
+        }
+        .line {
+            stroke-width: 2;
+        }
+        text {
+            font-size: 12px;
+        }
+        .interchange {
+            font-size: 8px;
+            text-anchor: middle;
+            dominant-baseline: middle;
+        }
+        svg {
+            width: 100%;
+            height: 100%;
+        }
+        .train {
+            fill: red;
+            stroke: black;
+            stroke-width: 0.5;
+        }
+        .button {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            padding: 10px;
+            background-color: lightblue;
+            border: none;
+            cursor: pointer;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <button class="button" onclick="startTrain()">开始模拟列车</button>
+    <svg viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet"></svg>
+    <script>
+        let linePaths = []; // 保存线路路径数据
+        let train; // 列车元素
+        let currentTransform = d3.zoomIdentity; // 初始变换
+        let currentTrainPosition = null; // 列车当前的位置
+
+        // 使用 fetch 异步加载 JSON 文件
+        fetch('data/subway_data.json')  // 使用相对路径加载 JSON 文件
+            .then(response => response.json())
+            .then(jsonData => {
+                const svg = d3.select("svg");
+                const g = svg.append("g");
+
+                // 定义比例尺，适配SVG大小
+                const xScale = d3.scaleLinear().domain([0, 1000]).range([0, 1000]);
+                const yScale = d3.scaleLinear().domain([0, 2000]).range([0, 1000]);
+
+                // 颜色比例尺
+                const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
+
+                // 处理每条线路数据
+                jsonData.l.forEach((lineData, i) => {
+                    const lineColor = colorScale(i);
+                    const stations = lineData.st;
+                    const connections = lineData.c;
+
+                    // 绘制线路
+                    const linePath = g.append("path")
+                        .datum(connections)
+                        .attr("class", "line")
+                        .attr("d", d3.line()
+                            .x(d => xScale(d.split(" ")[0]))
+                            .y(d => yScale(d.split(" ")[1])))
+                        .attr("stroke", lineColor)
+                        .attr("fill", "none").on("click", (event, d) => {
+                            console.log(`线路信息: ${JSON.stringify(d)}`);
+                        });;
+
+                    linePaths.push(linePath); // 保存路径数据
+
+                    // 绘制站点
+                    g.selectAll(`circle.line-${i}`)
+                        .data(stations)
+                        .enter()
+                        .append("circle")
+                        .attr("class", `station line-${i}`)
+                        .attr("cx", d => xScale(d.p.split(" ")[0]))
+                        .attr("cy", d => yScale(d.p.split(" ")[1]))
+                        .attr("r", 5)
+                        .attr("stroke", lineColor)
+                        .on("click", (event, d) => {
+                            console.log(`站点信息: ${JSON.stringify(d)}`);
+                        });
+
+                    // 绘制交叉站点标记
+                    g.selectAll(`text.interchange-${i}`)
+                        .data(stations.filter(d => d.r.split('|').length > 1))
+                        .enter()
+                        .append("text")
+                        .attr("class", `interchange line-${i}`)
+                        .attr("x", d => xScale(d.p.split(" ")[0]))
+                        .attr("y", d => yScale(d.p.split(" ")[1]))
+                        .text("交") 
+                        .on("click", (event, d) => {
+                            console.log(`站点信息: ${JSON.stringify(d)}`);
+                        });;
+
+                    // 添加站点名称
+                    g.selectAll(`text.station-name-${i}`)
+                        .data(stations)
+                        .enter()
+                        .append("text")
+                        .attr("x", d => xScale(d.p.split(" ")[0]) + 10) // 将文字右移
+                        .attr("y", d => yScale(d.p.split(" ")[1]) - 10) // 将文字上移
+                        .text(d => d.n);
+                });
+
+                // 添加缩放和拖动行为
+                const zoom = d3.zoom()
+                    .scaleExtent([0.5, 5]) // 缩放范围
+                    .on("zoom", (event) => {
+                        g.attr("transform", event.transform);
+                        currentTransform = event.transform; // 更新当前变换
+                        updateTrainPosition(); // 更新列车位置
+                    });
+
+                svg.call(zoom);
+            })
+            .catch(error => console.error('Error loading JSON file:', error));
+
+        // 更新列车位置
+        function updateTrainPosition() {
+            if (train && currentTrainPosition) {
+                const transformedPoint = currentTransform.apply(currentTrainPosition);
+                train.attr("transform", `translate(${transformedPoint[0]},${transformedPoint[1]})`);
+            }
+        }
+
+        // 开始模拟列车
+        function startTrain() {
+            if (linePaths.length === 0) return;
+
+            const linePath = linePaths[0]; // 选择第一条线路进行演示
+            const pathNode = linePath.node();
+            const pathLength = pathNode.getTotalLength();
+
+            if (!train) {
+                train = d3.select("svg").append("circle")
+                    .attr("class", "train")
+                    .attr("r", 5);
+            }
+
+            let stationPoints = [];
+            let pointAtLength = 0;
+
+            d3.selectAll(".station").each(function() {
+                const cx = d3.select(this).attr("cx");
+                const cy = d3.select(this).attr("cy");
+                stationPoints.push({ cx: +cx, cy: +cy });
+            });
+
+            function moveToNextStation(i) {
+                if (i >= stationPoints.length) return;
+
+                const point = stationPoints[i];
+                currentTrainPosition = [point.cx, point.cy];
+                const transformedPoint = currentTransform.apply(currentTrainPosition);
+
+                train.transition()
+                    .duration(1000)
+                    .attr("transform", `translate(${transformedPoint[0]},${transformedPoint[1]})`)
+                    .on("end", () => {
+                        setTimeout(() => moveToNextStation(i + 1), 1000); // 在站点停留1秒后移动到下一个站点
+                    });
+            }
+
+            moveToNextStation(0);
+        }
+
+    </script>
+</body>
+</html>

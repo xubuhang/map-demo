@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>中国地图</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+    <style>
+        #main {
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <div id="main"></div>
+    <script>
+        // 初始化 ECharts 实例
+        var chart = echarts.init(document.getElementById('main'));
+
+        // 加载 GeoJSON 数据
+        fetch('./data/china_data.json')
+            .then(response => response.json())
+            .then(geoJson => {
+                echarts.registerMap('china', geoJson);
+
+                var option = {
+                    tooltip: {
+                        trigger: 'item',
+                        formatter: '{b}'
+                    },
+                    geo: {
+                        map: 'china',
+                        roam: true,  // 开启缩放和平移
+                        label: {
+                            show: true
+                        },
+                        itemStyle: {
+                            normal: {
+                                areaColor: '#cccccc',
+                                borderColor: '#333333'
+                            },
+                            emphasis: {
+                                areaColor: '#ffcc00'
+                            }
+                        }
+                    },
+                    series: [
+                        {
+                            name: '点',
+                            type: 'scatter',
+                            coordinateSystem: 'geo',
+                            data: []
+                        }
+                    ]
+                };
+
+                chart.setOption(option);
+
+                // 添加点的函数
+                function addPoint(longitude, latitude, name) {
+                    var point = {
+                        name: name,
+                        value: [longitude, latitude]
+                    };
+
+                    var series = chart.getOption().series;
+                    series[0].data.push(point);
+
+                    chart.setOption({
+                        series: series
+                    });
+                }
+
+                // 示例：在北京添加一个点
+                addPoint(116.405285, 39.904989, '北京');
+
+                // 监听点击事件
+                chart.on('click', function(params) {
+                    if (params.componentType === 'geo') {
+                        var regionName = params.name;
+                        // 在这里根据区域名称执行相关操作或跳转
+                        alert('点击了区域: ' + regionName);
+                        // 例如，可以跳转到一个新的 URL
+                        // window.location.href = 'https://example.com/region/' + regionName;
+                    }
+                });
+            })
+            .catch(error => console.error('Error loading the GeoJSON file:', error));
+    </script>
+</body>
+</html>
